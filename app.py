@@ -1,4 +1,3 @@
-
 import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -11,6 +10,7 @@ import time
 from fuzzywuzzy import fuzz
 from datetime import datetime
 from selenium.webdriver.chrome.options import Options
+import os
 
 # Function to run the web scraping for exact matches
 def scrape_facebook_marketplace_exact(city, product, min_price, max_price, city_code_fb, sleep_time):
@@ -22,50 +22,67 @@ def scrape_facebook_marketplace_partial(city, product, min_price, max_price, cit
 
 # Main scraping function with an exact match flag
 def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_fb, exact, sleep_time=5):
-    # Setup Chrome options for headless mode and other important flags
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Headless mode
-    chrome_options.add_argument("--disable-gpu")  # Disable GPU, required in headless mode
-    chrome_options.add_argument("--no-sandbox")  # Bypass OS security model (useful for cloud deployments)
-    chrome_options.add_argument("--disable-dev-shm-usage")  # Overcome limited resource problems
-    chrome_options.add_argument("--window-size=1920x1080")  # Set window size to make sure elements load properly
     
-    # Initialize Chrome WebDriver with WebDriverManager
-    browser = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    # Set headless mode and disable GPU
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
 
-    # Setup the URL for Facebook Marketplace
+    # Use Chromium browser explicitly
+    chrome_options.binary_location = "/usr/bin/google-chrome"  # Change this path if needed
+
+    # Initialize WebDriver using WebDriverManager for ChromeDriver
+    try:
+        browser = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    except Exception as e:
+        st.error(f"Failed to initialize WebDriver: {e}")
+        return pd.DataFrame(), 0
+
+    # Construct Facebook Marketplace URL
     exact_param = 'true' if exact else 'false'
-    url = f"https://www.facebook.com/marketplace/{city_code_fb}/search?query={product}&minPrice={min_price}&maxPrice={max_price}&daysSinceListed=1&exact={exact_param}"
-    browser.get(url)
-
-    # Close cookies and pop-ups (try-except in case they're not present)
+    url = (f"https://www.facebook.com/marketplace/{city_code_fb}/search?"
+           f"query={product}&minPrice={min_price}&maxPrice={max_price}&daysSinceListed=1&exact={exact_param}")
+    
     try:
-        close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Decline optional cookies" and @role="button"]')
-        close_btn.click()
-    except:
-        pass
+        browser.get(url)
 
-    try:
-        close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Close" and @role="button"]')
-        close_btn.click()
-    except:
-        pass
+        # Close cookies pop-up
+        try:
+            close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Decline optional cookies" and @role="button"]')
+            close_btn.click()
+        except Exception:
+            pass
 
-    # Scroll down to load more items
-    last_height = browser.execute_script("return document.body.scrollHeight")
-    while True:
-        browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(sleep_time)  # Sleep to allow the page to load
-        new_height = browser.execute_script("return document.body.scrollHeight")
-        if new_height == last_height:  # Exit if no more content is loaded
-            break
-        last_height = new_height
+        # Close other pop-ups
+        try:
+            close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Close" and @role="button"]')
+            close_btn.click()
+        except Exception:
+            pass
 
-    # Retrieve the HTML content from the page
-    html = browser.page_source
-    browser.quit()  # Ensure that the browser is closed properly
+        # Scroll down to load more items
+        last_height = browser.execute_script("return document.body.scrollHeight")
+        while True:
+            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(sleep_time)
+            new_height = browser.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+                break
+            last_height = new_height
 
-    # Use BeautifulSoup to parse the HTML content
+        # Retrieve the HTML source
+        html = browser.page_source
+
+    except Exception as e:
+        st.error(f"Error during scraping: {e}")
+        browser.quit()
+        return pd.DataFrame(), 0
+
+    browser.quit()  # Close the browser
+
+    # Parse the HTML using BeautifulSoup
     soup = BeautifulSoup(html, 'html.parser')
     links = soup.find_all('a')
 
@@ -79,13 +96,14 @@ def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_f
             if fuzz.partial_ratio(product.lower(), link.text.lower()) > fuzz_threshold and city.lower() in link.text.lower()
         ]
 
-    # Extract product data from the filtered links
+    # Extract product details
     extracted_data = []
     for prod_link in final_links:
         url = prod_link.get('href')
         text = '\n'.join(prod_link.stripped_strings)
         lines = text.split('\n')
 
+        # Extract price using regex
         numeric_pattern = re.compile(r'\d[\d, •]*')
         price = None
 
@@ -106,24 +124,22 @@ def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_f
             'url': url
         })
 
-    # Ensure all URLs are correctly formatted
+    # Add base URL to the links
     base = "https://web.facebook.com/"
     for items in extracted_data:
         items['url'] = base + items['url']
 
-    # Create a DataFrame to store the extracted data
+    # Create a DataFrame
     items_df = pd.DataFrame(extracted_data)
     return items_df, len(links)
 
-# Streamlit UI for user input and results display
+# Streamlit UI
 st.set_page_config(page_title="Facebook Marketplace Scraper", layout="wide")
 st.title("🏷️ Facebook Marketplace Scraper")
-st.markdown("""
-Welcome to the Facebook Marketplace Scraper!  
-Easily find products in your city and filter by price.  
-""")
+st.markdown("""Welcome to the Facebook Marketplace Scraper!  
+Easily find products in your city and filter by price.""")
 
-# Input fields with better layout and styling
+# Input fields in Streamlit form
 with st.form(key='input_form'):
     col1, col2 = st.columns(2)
     
@@ -140,21 +156,21 @@ with st.form(key='input_form'):
 
     submit_button = st.form_submit_button(label="🔍 Scrape Data")
 
-# Execute scraping when form is submitted
+# Trigger the scraping functionality
 if submit_button:
     if city and product and min_price <= max_price:
         with st.spinner("Scraping matches..."):
             items_df, total_links = scrape_facebook_marketplace_exact(city, product, min_price, max_price, city_code_fb, sleep_time)
 
-        # Display the results if matches are found
         if not items_df.empty:
             st.success(f"Found {len(items_df)} match(es)! 🎉")
             st.write("### Match Results:")
             st.dataframe(items_df)
 
-            # Allow the user to download the scraped results as CSV
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
             csv_filename = f"{product}_{city}_{current_time}.csv"
+            
+            # Download the results as CSV
             csv = items_df.to_csv(index=False)
             st.download_button("💾 Download CSV", csv, csv_filename, "text/csv")
         else:
