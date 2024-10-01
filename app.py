@@ -1,3 +1,5 @@
+
+
 import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -30,56 +32,49 @@ def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_f
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    # Use Chromium browser explicitly
-    chrome_options.binary_location = "/usr/bin/google-chrome"  # Change this path if needed
+    # Use the default Chrome binary
+    # If necessary, uncomment and specify the path
+    # chrome_options.binary_location = "/usr/bin/google-chrome"
 
     # Initialize WebDriver using WebDriverManager for ChromeDriver
     try:
         browser = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     except Exception as e:
         st.error(f"Failed to initialize WebDriver: {e}")
-        return pd.DataFrame(), 0
+        return pd.DataFrame(), 0  # Return empty DataFrame and zero links
 
     # Construct Facebook Marketplace URL
     exact_param = 'true' if exact else 'false'
     url = (f"https://www.facebook.com/marketplace/{city_code_fb}/search?"
            f"query={product}&minPrice={min_price}&maxPrice={max_price}&daysSinceListed=1&exact={exact_param}")
-    
+    browser.get(url)
+
+    # Close cookies pop-up
     try:
-        browser.get(url)
+        close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Decline optional cookies" and @role="button"]')
+        close_btn.click()
+    except:
+        pass
 
-        # Close cookies pop-up
-        try:
-            close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Decline optional cookies" and @role="button"]')
-            close_btn.click()
-        except Exception:
-            pass
+    # Close other pop-ups
+    try:
+        close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Close" and @role="button"]')
+        close_btn.click()
+    except:
+        pass
 
-        # Close other pop-ups
-        try:
-            close_btn = browser.find_element(By.XPATH, '//div[@aria-label="Close" and @role="button"]')
-            close_btn.click()
-        except Exception:
-            pass
+    # Scroll down to load more items
+    last_height = browser.execute_script("return document.body.scrollHeight")
+    while True:
+        browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(sleep_time)
+        new_height = browser.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            break
+        last_height = new_height
 
-        # Scroll down to load more items
-        last_height = browser.execute_script("return document.body.scrollHeight")
-        while True:
-            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(sleep_time)
-            new_height = browser.execute_script("return document.body.scrollHeight")
-            if new_height == last_height:
-                break
-            last_height = new_height
-
-        # Retrieve the HTML source
-        html = browser.page_source
-
-    except Exception as e:
-        st.error(f"Error during scraping: {e}")
-        browser.quit()
-        return pd.DataFrame(), 0
-
+    # Retrieve the HTML source
+    html = browser.page_source
     browser.quit()  # Close the browser
 
     # Parse the HTML using BeautifulSoup
@@ -136,8 +131,7 @@ def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_f
 # Streamlit UI
 st.set_page_config(page_title="Facebook Marketplace Scraper", layout="wide")
 st.title("🏷️ Facebook Marketplace Scraper")
-st.markdown("""Welcome to the Facebook Marketplace Scraper!  
-Easily find products in your city and filter by price.""")
+st.markdown("""Welcome to the Facebook Marketplace Scraper! Easily find products in your city and filter by price.""")
 
 # Input fields in Streamlit form
 with st.form(key='input_form'):
