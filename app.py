@@ -1,5 +1,4 @@
 
-
 import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -34,7 +33,7 @@ def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_f
 
     # Use the default Chrome binary
     # If necessary, uncomment and specify the path
-    # chrome_options.binary_location = "/usr/bin/google-chrome"
+    chrome_options.binary_location = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 
     # Initialize WebDriver using WebDriverManager for ChromeDriver
     try:
