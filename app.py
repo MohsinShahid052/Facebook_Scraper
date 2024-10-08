@@ -1,7 +1,6 @@
+
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 import re
@@ -21,15 +20,17 @@ def scrape_facebook_marketplace_partial(city, product, min_price, max_price, cit
 
 # Main scraping function with an exact match flag
 def scrape_facebook_marketplace(city, product, min_price, max_price, city_code_fb, exact, sleep_time=5):
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    # Configure Chromedriver
-    chromedriver_path = ChromeDriverManager().install()
-
-    # Initialize Chrome WebDriver
-    browser = webdriver.Chrome(service=Service(chromedriver_path), options=chrome_options)
-    # browser = webdriver.Chrome(service=Service(chromedriver_path))
-
+    # Configure Chrome options
+    chrome_options = uc.ChromeOptions()
+    chrome_options.add_argument("--headless")  # Run in headless mode (without GUI)
+    
+    # If undetected_chromedriver cannot detect the version, explicitly set the Chrome binary path
+    # Update this path according to your system's Chrome installation
+    chrome_options.binary_location = "C:/Program Files/Google/Chrome/Application/chrome.exe"
+    
+    # Initialize the undetected Chrome WebDriver
+    browser = uc.Chrome(options=chrome_options)
+    
     # Setup URL
     exact_param = 'true' if exact else 'false'
     url = f"https://www.facebook.com/marketplace/{city_code_fb}/search?query={product}&minPrice={min_price}&maxPrice={max_price}&daysSinceListed=1&exact={exact_param}"
